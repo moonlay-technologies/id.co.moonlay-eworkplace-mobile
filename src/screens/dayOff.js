@@ -2,6 +2,7 @@ import React, { Component } from 'react'
 import { View, Text, Button, Image, StyleSheet, Alert, BackHandler,TouchableOpacity, Picker, TextInput } from 'react-native'
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Geolocation from 'react-native-geolocation-service';
+import {ApiMaps} from '../config/apiKey'
 import axios from 'axios';
 import FontAwesome5 from 'react-native-vector-icons/FontAwesome5';
 import Textarea from 'react-native-textarea';

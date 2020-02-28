@@ -10,6 +10,7 @@ import Geocoder from 'react-native-geocoding';
 import { connect } from 'react-redux';
 import { addNama, addLocation, addStatusClockin, addLoading } from '../actions/DataActions';
 import FontAwesome5 from 'react-native-vector-icons/FontAwesome5';
+import {ApiMaps} from '../config/apiKey'
 import {
   ApplicationProvider,
   Button,
@@ -147,7 +148,7 @@ class LoggedIn extends Component {
     findCoordinates = async () => {
       Geolocation.getCurrentPosition(
         position => {
-          Geocoder.init('AIzaSyA5wKOId22uPu5jTKhTh0LpF3R5MRpmjyw');
+          Geocoder.init(ApiMaps);
           Geocoder.from(position.coords.latitude, position.coords.longitude)
             .then(json => {
               // if(this._isMounted){

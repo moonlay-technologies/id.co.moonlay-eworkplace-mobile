@@ -1,6 +1,7 @@
 import React, { Component } from 'react'
 import { View, Text, StyleSheet, Alert, TouchableOpacity, BackHandler,Picker, TextInput, ToastAndroid } from 'react-native'
 import Geolocation from 'react-native-geolocation-service';
+import {ApiMaps} from '../config/apiKey'
 import deviceStorage from '../services/deviceStorage';
 import AsyncStorage from '@react-native-community/async-storage';
 import { CommonActions } from '@react-navigation/native';

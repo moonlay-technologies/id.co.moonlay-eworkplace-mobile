@@ -8,6 +8,7 @@ import Geocoder from 'react-native-geocoding';
 import { CommonActions } from '@react-navigation/native';
 import axios from 'axios';
 import FontAwesome5 from 'react-native-vector-icons/FontAwesome5';
+import {ApiMaps} from '../config/apiKey'
 import { connect } from 'react-redux';
 import { addStatusClockin, addLoading } from '../actions/DataActions';
 
@@ -134,7 +135,7 @@ class WorkClient extends Component {
   findCoordinates = () => {
     Geolocation.getCurrentPosition(
       position => {
-        Geocoder.init('AIzaSyA5wKOId22uPu5jTKhTh0LpF3R5MRpmjyw');
+        Geocoder.init(ApiMaps);
         Geocoder.from(position.coords.latitude, position.coords.longitude)
           .then(json => {
             console.log(json);
