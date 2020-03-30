@@ -1,20 +1,30 @@
 
 import React from 'react';
-import { View, ActivityIndicator } from 'react-native';
+import { StyleSheet, Modal,View, ActivityIndicator } from 'react-native';
 
-const Loading = ({ size }) => {
+export default class Loading extends React.Component{
+  render() {
   return (
-    <View style={styles.spinnerContainer}>
-      <ActivityIndicator size={size}/>
-    </View>
+    <Modal
+        animationType="fade"
+        visible={this.props.visible}
+        transparent={true}
+        >
+        <View style={styles.mainOuterComponent}>
+          <ActivityIndicator size={50} color={'#FFFFFF'}/>
+        </View>
+     </Modal>
   );
 };
+}
 
-const styles = {
-  spinnerContainer: {
-    marginTop: 12,
-    marginBottom: 12
-  }
-};
+const styles = StyleSheet.create({
+  mainOuterComponent: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#00000088'
+  },
+});
 
 export { Loading };

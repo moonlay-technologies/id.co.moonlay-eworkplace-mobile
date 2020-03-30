@@ -1,102 +1,199 @@
 import React, { Component } from 'react'
-import { View, Text, StyleSheet, Alert, TouchableOpacity, BackHandler,Picker, TextInput, ToastAndroid } from 'react-native'
+import { View, Text, StyleSheet, Alert, TouchableOpacity, BackHandler,Picker, TextInput, ToastAndroid, RefreshControl, SafeAreaView, ScrollView } from 'react-native'
 import Geolocation from 'react-native-geolocation-service';
-import {ApiMaps} from '../config/apiKey'
+import Geocoder from 'react-native-geocoding';
 import deviceStorage from '../services/deviceStorage';
 import AsyncStorage from '@react-native-community/async-storage';
 import { CommonActions } from '@react-navigation/native';
+import {ApiMaps} from '../config/apiKey'
 import axios from 'axios';
+import moment from 'moment';
 import { connect } from 'react-redux';
 import { addStatusClockin, addLoading } from '../actions/DataActions';
+import {Url_Clockin, Url_GetListHD} from '../config/URL'
 
-class sick extends Component {
+//Sick Form
+class Sick extends Component {
     constructor(props){
         super(props);
         this.state = {
             idUser : '',
+            fullname :'',
+            username:'',
             photo: null,
-            location:'',
+            Location:'',
+            permission: null,
             message:'',
-            status: 'Sick',
-            scrumMaster: '',
+            status: 'Sick Leave',
+            headDivision: '',
             projectName :'',
             clockInstatus: false,
             statusCheckInn: 'You have clocked in!',
+            refreshing: false,
+            backPressed: 0,
+            listHD: [],
           }
         this.findCoordinates = this.findCoordinates.bind(this);
-        this.submitAll = this.submitAll.bind(this);
         this.onBack = this.onBack.bind(this);
+        this.loadData = this.loadData.bind(this);
+        this.submitAll = this.submitAll.bind(this);
       }
   
       componentDidMount(){
-        // alert(this.props.clockin_status)
-        this.backHandler = BackHandler.addEventListener('hardwareBackPress', this.onBack);
-        this.findCoordinates()
+        BackHandler.addEventListener('hardwareBackPress', this.onBack);
+        this.loadData();
       }
       componentWillUnmount() {
-          this.watchID != null && Geolocation.clearWatch(this.watchID);
-          this.backHandler.remove();
+        BackHandler.removeEventListener('hardwareBackPress', this.onBack);
       }
 
       onBack = () => {
-        this.props.navigation.goBack();
-        return true;
-     };
+        this.setState({
+          backPressed : this.state.backPressed + 1
+        })
+    
+        if(this.state.backPressed % 2 === 1){
+          this.props.navigation.goBack();
+          return true;
+        }
+      };
+
+     loadData = async () => {     
+      const username = await AsyncStorage.getItem("username");  
+      const name = await AsyncStorage.getItem("name");
+      const location = await AsyncStorage.getItem("location");
+      const division = await AsyncStorage.getItem("division");
+      const user_permission = await AsyncStorage.getItem('user_permission');
+      const permission = parseInt(user_permission);
+
+        this.setState({
+          username : username,
+          fullname : name,
+          Location : location,
+          permission : permission
+        })
+        axios({
+          method: 'GET',
+          url: Url_GetListHD + division,
+          headers: {
+            'accept': 'application/json',
+            'Authorization': 'Bearer ' + this.props.tokenJWT
+          },
+        }).then((response) => {
+          console.log('Success: Get list Head Division')
+          this.setState({
+            listHD: response.data.data
+          });
+        })
+        .catch((errorr) => {
+          console.log('Error: Get list Head Division')
+          console.log(errorr)
+        });
+      };
 
       async submitAll(){
         const value = await AsyncStorage.getItem('clockin_state2');
-        if(this.props.clockin_status === false || value === 'clockin'){
-          alert('kamu sudah clock in hari ini');
+        const location = await AsyncStorage.getItem('location');
+        const sickValue = await AsyncStorage.getItem('sick_submit');
+
+        if(this.props.clockin_status === true || value === 'clockin'){
+          Alert.alert(
+            "You can't submit!",'You have clocked in today, your next submit will be start tomorrow at 07.00 AM',
+            [
+              { text: "OK", onPress: () => console.log('OK'), style: "cancel"},
+            ],
+            { cancelable: false },
+          );
+          this.props.addLoad(false)
+          return true;
         }
-        else if(this.state.scrumMaster === '' || this.state.projectName === ''){
-          alert('Scrum master dan nama proyek harus dipilih!');
+        else if(this.state.headDivision === '' || this.state.projectName === '' || this.state.message === ''){
+          alert('All form must be filled!');
         }
-        else if(this.state.scrumMaster !== '' && this.state.projectName !== '' && this.props.clockin_status === true){
+        else if(sickValue === '1'){
+          Alert.alert(
+            "You can't submit!",'You have submitted sick form today. Your next submit will be start tomorrow at 07.00 AM',
+            [
+              { text: "OK", onPress: () => console.log('OK'), style: "cancel"},
+            ],
+            { cancelable: false },
+          );
+          this.props.addLoad(false)
+          return true;
+        }
+        else if(location === null || location === ''){
+          Alert.alert(
+            'Location is nowhere','You must enable your location before clock in!',
+            [
+              { text: "OK", onPress: () => console.log('OK'), style: "cancel"},
+            ],
+            { cancelable: false },
+          );
+          this.props.addLoad(false)
+          return true; 
+        }
+        else if(this.state.headDivision !== '' && this.state.projectName !== '' && this.props.clockin_status === false && this.state.message !== ''){
           axios({
             method: 'POST',
-            url: 'https://absensiapiendpoint.azurewebsites.net/api/Sick',
+            url: Url_Clockin,
             headers: {
-              accept: '*/*',
-              'Content-Type': 'application/json',
+              'accept': 'application/json',
+              'Authorization': 'Bearer ' + this.props.tokenJWT
             },
             data: {
-              username: this.props.nameUser,
-              name: this.props.namee,
-              checkIn: new Date(),
-              state: this.state.status,
-              location : this.props.userLocation,
-              approval: "pending",
-              headDivision: this.state.scrumMaster,
-              projectName: this.state.projectName,
-              note: this.state.message
+              Username: this.state.username,
+              Name: this.state.fullname,
+              CheckIn: new Date(),
+              State: this.state.status,
+              Location : this.state.Location,
+              Approval : 'Pending',
+              ApprovalByAdmin : 'Pending',
+              HeadDivision: this.state.headDivision,
+              ProjectName: this.state.projectName,
+              Note: this.state.message
             }
           }).then((response) => {
-            console.log(response)
+            console.log('Success: Submit sick data')
+            console.log(this.state.headDivision)
             this.setState({
-              statusCheckIn: 'You have clocked in!',
-              clockInstatus: true,
-              idUser: response.data.idSick,
+              idUser: response.data.Id,
             });
-            deviceStorage.saveItem("clockin_state", "clockin");
-            deviceStorage.saveItem("id_user", JSON.stringify(this.state.idUser));
-            this.props.addClockin(this.state.clockInstatus, this.state.statusCheckInn, this.state.idUser, this.state.status)
+            deviceStorage.saveItem("sick_submit", "1");
+            deviceStorage.saveItem("sick_submit_day", moment().format('dddd'));
             this.props.addLoad(true)
+            if(this.state.permission === 1){
+              this.props.navigation.dispatch(
+                CommonActions.reset({
+                  index: 1,
+                  routes: [
+                    { name: 'HomeHD' },
+                  ],
+                })
+              )
+            }
+            else if(this.state.permission === 2){
+              this.props.navigation.dispatch(
+                CommonActions.reset({
+                  index: 1,
+                  routes: [
+                    { name: 'Home' },
+                  ],
+                })
+              )
+            }
             ToastAndroid.showWithGravity(
-              'Clock in success',
+              'Submit success!',
               ToastAndroid.SHORT,
               ToastAndroid.BOTTOM,
             );
-            this.props.navigation.dispatch(
-              CommonActions.reset({
-                index: 1,
-                routes: [
-                  { name: 'Home' },
-                ],
-              })
-            )
           })
           .catch((errorr) => {
-            alert(errorr)
+            console.log('Error: Submit sick data')
+            ToastAndroid.showWithGravity(
+              'Submit fail!',
+              ToastAndroid.SHORT,
+              ToastAndroid.BOTTOM,
+            );
         });
         }       
       }
@@ -104,49 +201,56 @@ class sick extends Component {
       findCoordinates = () => {
         Geolocation.getCurrentPosition(
           position => {
-            const currentLongitude = JSON.stringify(position.coords.longitude);
-                    //getting the Longitude from the location json
-            const currentLatitude = JSON.stringify(position.coords.latitude);
-                    //getting the Latitude from the location json
-            this.setState({ 
-                location : currentLongitude + ' ' + currentLatitude
-            });
-			    },
+            Geocoder.init(ApiMaps);
+            Geocoder.from(position.coords.latitude, position.coords.longitude)
+              .then(json => {
+                  console.log('Success: Get user location');
+                  var addressComponent = json.results[1].address_components[0].long_name;
+                  this.setState({
+                    Location: addressComponent
+                  })
+                  deviceStorage.saveItem("location", this.state.Location);
+                  console.log(addressComponent);       
+              })
+            .catch(error => console.warn('Error: Get user location'));
+          },
           error => Alert.alert(error.message),
           { enableHighAccuracy: true, timeout: 50000, maximumAge: 1000 }
         );
-            this.watchID = Geolocation.watchPosition(position => {
-            //Will give you the location on location change
-            console.log(position);
-            const currentLongitude = JSON.stringify(position.coords.longitude);
-            //getting the Longitude from the location json
-            const currentLatitude = JSON.stringify(position.coords.latitude);
-            //getting the Latitude from the location json
-            this.setState({ location: currentLongitude + ' ' + currentLatitude });
-          });
 	  };
 
     render() {
         return (
-            <View style={styles.container2}>
+            <SafeAreaView style={styles.container2}>
+              <ScrollView
+                alwaysBounceVertical={true} 
+                refreshControl={
+                <RefreshControl refreshing={this.state.refreshing} 
+                onRefresh={this.findCoordinates} />
+              }>
+              <View style={{flex:8}}>
                 <Text style={styles.textareaContainer}>
                     Please fill this forms
                 </Text>
                 <Text style={styles.textSM}>
-                    Select Your Scrum Master *
+                    Select Your Head Division *
                 </Text>
 
                 <View style={styles.viewPicker}>            
                   <Picker
                     mode={"dropdown"}
-                    selectedValue={this.state.scrumMaster}
+                    selectedValue={this.state.headDivision}
                     style={styles.picker}
                     onValueChange={(itemValue, itemIndex) =>
-                      this.setState({scrumMaster: itemValue})
+                      this.setState({
+                        headDivision: itemValue
+                      })
                     }>
-                    <Picker.Item label="" value="" />
-                    <Picker.Item label="Java" value="java" />
-                    <Picker.Item label="JavaScript" value="js" />
+                    <Picker.Item label='' value=''/>
+                    {this.state.listHD.map((u,i) => {
+                      return (<Picker.Item key={i} label={u.profile.firstname+' '+u.profile.lastname} value={u.username}/>);
+                      })
+                    }
                   </Picker>
                 </View>
 
@@ -156,57 +260,67 @@ class sick extends Component {
                 </Text>
                 <TextInput
                   style={styles.inputText}
+                  maxLength={40}
                   onChangeText={text => this.setState({projectName: text})}
                   value={this.state.projectName}>
                 </TextInput>
 
                 <Text
                   style={styles.textSM}>
-                    Notes
+                    Notes *
                 </Text>
                 <TextInput
                     multiline={true}
-                    placeholder="kamu sakit apa..." 
+                    placeholder="tell us about your health issue"
+                    maxLength={200} 
                     style={styles.textInput}
                     onChangeText={text => this.setState({message: text})}
                     value={this.state.message}>
                 </TextInput>
-                <TouchableOpacity onPress={this.submitAll} style={styles.buttonSubmit}>
-                    <Text style={styles.textbtnSubmit} >CLOCK IN</Text>
-                </TouchableOpacity>
-          </View>
+                </View>
+
+                <View style={{flex:1, marginTop:30}}>
+                  <TouchableOpacity onPress={this.submitAll} style={styles.buttonSubmit}>
+                      <Text style={styles.textbtnSubmit} >Submit</Text>
+                  </TouchableOpacity>
+                </View>
+                
+            </ScrollView>
+          </SafeAreaView>
         )
     }
 }
 
 const styles = StyleSheet.create({
   container2:{
-    flex: 1,
-    backgroundColor:'#e5e5e5',
+    flex:1, backgroundColor:'#F9FCFF'
   },
-  textareaContainer: {fontSize: 25, fontWeight:'bold', paddingLeft:20, paddingTop:15},
+  textareaContainer: {fontSize:20, marginLeft:21, fontWeight:'600', fontFamily:'Nunito-SemiBold', color:'#505050', paddingTop:10},
    textSM:{
     marginTop: 16,
+    marginBottom:10,
     paddingLeft:20,
-    fontSize:18
+    fontSize:16,
+    fontWeight:'300', fontFamily:'Nunito-Light'
   },
   viewPicker:{
-    width:'80%', height:'6%', marginLeft:20, borderRadius:10, borderColor:'black', borderWidth:1, backgroundColor:'white'
+    width:'90%', height:50, marginLeft:20, borderRadius:5, borderColor:'#505050', borderWidth:1, backgroundColor:'white'
   },
   picker:{
-    height: '100%', width: '100%', borderWidth:20, borderColor:'black'
+    height: '100%', width: '100%', borderWidth:20, borderColor:'#505050'
   },
   textInput:{
-    height:200, borderColor: 'gray', textAlignVertical: 'top', borderWidth: 1, marginLeft:20, borderColor:'black', width:'80%', borderRadius:10, backgroundColor:'white', fontSize:20
+    paddingLeft:10, paddingRight:10,height:200, borderColor: '#505050', textAlignVertical: 'top', borderWidth: 1, marginLeft:20, borderColor:'#505050', width:'90%', borderRadius:5, backgroundColor:'white', fontSize:18
   },
   buttonSubmit:{
-    backgroundColor:'#1A446D', marginTop:30, alignItems:'center', width:'50%', height:'12%', alignSelf:'center', borderRadius:20
+    backgroundColor:'#1A446D', marginTop:30, alignItems:'center', width:'90%', height:50, alignSelf:'center', borderRadius:5
   },
   textbtnSubmit:{
-    color:'white', fontSize: 29, fontWeight:'bold', textAlign:'center',textAlignVertical: "center", flex:1 
+    color:'white', fontSize: 20, fontWeight:'600', textAlign:'center',textAlignVertical: "center", flex:1, fontFamily:'Nunito-SemiBold', marginBottom:7 
   },
   inputText:{
-    textAlignVertical: 'top', borderWidth: 1, borderRadius:10, width:'80%', height:'6%', marginLeft:20, backgroundColor:'white', fontSize:20 
+    textAlignVertical: 'top', borderWidth: 1, borderRadius:5, width:'90%', height:50, marginLeft:20, backgroundColor:'white', fontSize:18, fontFamily:'Nunito', fontWeight:'600', paddingLeft:10, paddingRight:10,
+    borderColor:'#505050', fontFamily:'Nunito-Regular', fontWeight:'600' 
   },
 });
 
@@ -214,13 +328,7 @@ const mapStateToPropsData = (state) => {
   console.log(state);
   return {
     tokenJWT: state.JwtReducer.jwt,
-    nameUser: state.DataReducer.username,
-    namee: state.DataReducer.fullname,
-    userLocation: state.DataReducer.locations,
     clockin_status : state.DataReducer.clockIn,
-    status_Checkin : state.DataReducer.statusCheckIn,
-    id : state.DataReducer.id,
-    workStatus :  state.DataReducer.workStatus
   }
 }
 const mapDispatchToPropsData = (dispatch) => {
@@ -230,4 +338,4 @@ const mapDispatchToPropsData = (dispatch) => {
   }
 }
 
-export default connect(mapStateToPropsData, mapDispatchToPropsData)(sick)
+export default connect(mapStateToPropsData, mapDispatchToPropsData)(Sick)

@@ -1,60 +1,107 @@
 import React, { Component } from 'react'
-import { View, Text, Image, Picker, StyleSheet, Alert, BackHandler,TouchableOpacity, TextInput, ActivityIndicator, ToastAndroid } from 'react-native'
+import { View, Text, Image, Picker, StyleSheet, Alert, BackHandler,TouchableOpacity, TextInput, ToastAndroid, SafeAreaView, ScrollView, RefreshControl } from 'react-native'
 import ImagePicker from 'react-native-image-picker'
 import deviceStorage from '../services/deviceStorage';
 import AsyncStorage from '@react-native-community/async-storage';
 import Geolocation from 'react-native-geolocation-service';
 import Geocoder from 'react-native-geocoding';
 import { CommonActions } from '@react-navigation/native';
-import axios from 'axios';
-import FontAwesome5 from 'react-native-vector-icons/FontAwesome5';
 import {ApiMaps} from '../config/apiKey'
+import axios from 'axios';
+import Camera from '../../image/camera.svg'
 import { connect } from 'react-redux';
 import { addStatusClockin, addLoading } from '../actions/DataActions';
+import {Url_Clockin, Url_UploadPhoto, Url_GetListHD} from '../config/URL'
 
+//Work at Client Office
 class WorkClient extends Component {
   constructor(props){
     super(props);
     this.state = {
         idUser : '',
-        loadingPhoto: false,
         photo: null,
+        username:'',
+        fullname:'',
         Location: '',
+        permission: null,
         urlphoto:'',
-        message:'',
-        status: 'Work At Client',
-        statusCheckInn: 'You have clocked in!',
+        status: 'Work at client office',
         client : '',
         clientCompany : '',
         projectName : '',
-        scrumMaster : ''
+        headDivision : '',
+        loadingPhoto: false,
+        refreshing:false,
+        backPressed: 0,
+        listHD:[],
       }
     this.findCoordinates = this.findCoordinates.bind(this);
     this.handleChoosePhoto = this.handleChoosePhoto.bind(this);
     this.handleChangeMessage = this.handleChangeMessage.bind(this);
-    this.onSubmitPhoto = this.onSubmitPhoto.bind(this)
-    this.submitAll = this.submitAll.bind(this)
     this.onBack = this.onBack.bind(this);
+    this.loadData = this.loadData.bind(this);
+    this.submitAll = this.submitAll.bind(this);
   }
 
   componentDidMount(){
-    // alert(this.props.clockin_status)
-    this.backHandler = BackHandler.addEventListener('hardwareBackPress', this.onBack);
-    this.findCoordinates()
+    BackHandler.addEventListener('hardwareBackPress', this.onBack);
+    this.loadData();
   }
   componentWillUnmount() {
-      this.watchID != null && Geolocation.clearWatch(this.watchID);
-      this.backHandler.remove();
+    BackHandler.removeEventListener('hardwareBackPress', this.onBack);
   }
 
   onBack = () => {
-    this.props.navigation.goBack();
-    return true;
- };
+    this.setState({
+      backPressed : this.state.backPressed + 1
+    })
+
+    if(this.state.backPressed % 2 === 1){
+      this.props.navigation.goBack();
+      return true;
+    }
+  };
+
+ loadData = async () => {     
+  const username = await AsyncStorage.getItem("username");  
+  const name = await AsyncStorage.getItem("name");
+  const location = await AsyncStorage.getItem("location");
+  const division = await AsyncStorage.getItem("division");
+  const user_permission = await AsyncStorage.getItem('user_permission');
+  const permission = parseInt(user_permission);
+  
+    this.setState({
+      username : username,
+      fullname : name,
+      Location : location,
+      permission : permission
+    })
+
+    axios({
+      method: 'GET',
+      url: Url_GetListHD + division,
+      headers: {
+        'accept': 'application/json',
+        'Authorization': 'Bearer ' + this.props.tokenJWT
+      },
+    }).then((response) => {
+      console.log('Success: Get list Head Division')
+      this.setState({
+        listHD: response.data.data
+      });
+    })
+    .catch((errorr) => {
+      console.log('Error: Get list Head Division')
+      console.log(errorr)
+    });
+  };
 
   handleChoosePhoto = () => {
     var options = {
       title: 'Select Image',
+      maxWidth: 1000,
+      maxHeight: 1000,
+      quality: 1,
       storageOptions: {
         skipBackup: true,
         path: 'images',
@@ -62,75 +109,43 @@ class WorkClient extends Component {
     };
     ImagePicker.showImagePicker(options, response => {
       if (response.uri) {
-        console.log(response)
+        console.log(response.uri)
+        const name = response.fileName;
+        const type = response.type;
         this.setState({ 
           loadingPhoto: true 
         })
-        var url = 'https://absensiapiendpoint.azurewebsites.net/api/BlobStorage/InsertFile';
-        const Header = {
-          // 'Content-Type': 'multipart/form-data',
-          // 'accept' : 'text/plain'
-        }       
-        var formData = new FormData();
-        formData.append('stream', {
-          uri: response.uri,
-          name: response.fileName,
-          type: response.type
-        })
-        axios.post(url, formData ,Header)
-          .then(data => {
-            this.setState({
-              urlphoto : data.data,
-              photo: response,
-              loadingPhoto: false
-            })
-            alert(this.state.urlphoto)
-            console.log("ulrnya : " + this.state.urlphoto)
-            }).catch(err => {
-              //alert(err)
-                console.log(err)
-                this.setState({
-                  loadingPhoto: false
-                })
-              }
-            )
+          var url = Url_UploadPhoto;
+          const Header = {
+            // 'Content-Type': 'multipart/form-data',
+            // 'accept' : 'text/plain'
+          }       
+          var formData = new FormData();
+          formData.append('stream', {
+            uri: response.uri,
+            name: name,
+            type: type
+          })
+          axios.post(url, formData ,Header)
+            .then(data => {
+              console.log('Success: Upload photo')
+              this.setState({
+                urlphoto : data.data,
+                photo: response,
+              })
+              console.log("Photo url: " + this.state.urlphoto)
+              }).catch(err => {
+                  console.log('Error: Upload photo')
+                  ToastAndroid.showWithGravity(
+                    'Upload Photo Failed',
+                    ToastAndroid.SHORT,
+                    ToastAndroid.BOTTOM,
+                  );
+                }
+              )
           }
-        })
+      })
   }
-
-  onSubmitPhoto = (e) => {     
-    var url = 'https://absensiapiendpoint.azurewebsites.net/api/BlobStorage/InsertFile';
-    const Header = {
-      // 'Content-Type': 'multipart/form-data',
-      // 'accept' : 'text/plain'
-    } 
-    var formData = new FormData();
-    formData.append('stream', {
-      uri: this.state.photo.uri,
-      name: this.state.photo.fileName,
-      type: this.state.photo.type
-    })
-     axios.post(url, formData ,Header)
-          .then(data => {
-            this.setState({
-              urlphoto : data.data
-            })
-            ToastAndroid.showWithGravity(
-              'Upload success!',
-              ToastAndroid.SHORT,
-              ToastAndroid.BOTTOM,
-            );
-            console.log("ulrnya : " + this.state.urlphoto)
-          }).catch(err => {
-            ToastAndroid.showWithGravity(
-              'Upload fail!',
-              ToastAndroid.SHORT,
-              ToastAndroid.BOTTOM,
-            );
-              console.log(err)
-             }
-          )
-   }
 
   findCoordinates = () => {
     Geolocation.getCurrentPosition(
@@ -138,14 +153,15 @@ class WorkClient extends Component {
         Geocoder.init(ApiMaps);
         Geocoder.from(position.coords.latitude, position.coords.longitude)
           .then(json => {
-            console.log(json);
+            console.log('Success: Get user location');
             var addressComponent = json.results[1].address_components[0].long_name;
               this.setState({
                 Location: addressComponent
               })
-              console.log(addressComponent);
+              deviceStorage.saveItem("location", this.state.Location);
+              console.log(addressComponent);    
           })
-        .catch(error => console.warn(error));
+        .catch(error => console.warn('Error: Get user location'));
       },
       error => Alert.alert(error.message),
       { enableHighAccuracy: true, timeout: 50000, maximumAge: 1000 }
@@ -153,65 +169,147 @@ class WorkClient extends Component {
   };
 
   async submitAll(){
+    if(this.props.announcement !== ''){
+      Alert.alert(
+        "You can't clock in!",this.props.announcement,
+        [
+          { text: "OK", onPress: () => console.log('OK'), style: "cancel"},
+        ],
+        { cancelable: false },
+      );
+      return true;
+    }
+    else{
     const value = await AsyncStorage.getItem('clockin_state2');
-    if(this.props.clockin_status === false || value === 'clockin'){
-      alert('kamu sudah clock in hari ini')
+    const location = await AsyncStorage.getItem('location');
+    const sickValue = await AsyncStorage.getItem('sick_submit');
+
+    //Get Hour
+    const hour = new Date().getHours();
+    console.log('Time right now: '+hour)
+
+    if(this.props.clockin_status === true || value === 'clockin'){
+      Alert.alert(
+        'You have clocked in today!','Your next clock in will be start tomorrow at 07.00 AM',
+        [
+          { text: "OK", onPress: () => console.log('OK'), style: "cancel"},
+        ],
+        { cancelable: false },
+      );
+      this.props.addLoad(false)
+      return true;
     }
-    else if(this.state.scrumMaster === '' || this.state.urlphoto === '' || this.state.projectName === '' || this.state.client === '' || this.state.clientCompany === ''){
-      alert('Semua form dan foto harus terisi!');
+    else if(hour > 11 || hour <= 6){
+      Alert.alert(
+        "You can't clock in!",'Clock in time only available at 7 AM - 12 PM',
+        [
+          { text: "OK", onPress: () => console.log('OK'), style: "cancel"},
+        ],
+        { cancelable: false },
+      );
+      this.props.addLoad(false)
+      return true;
     }
-    else if(this.state.scrumMaster !== '' && this.state.urlphoto !== '' && this.state.projectName !== ''
-    && this.state.client !== '' && this.state.clientCompany !== '' && this.props.clockin_status === true){
+    else if(this.state.headDivision === '' || this.state.urlphoto === '' || this.state.projectName === '' || this.state.client === '' || this.state.clientCompany === ''){
+      alert('All form must be filled!');
+    }
+    else if(sickValue === '1'){
+      Alert.alert(
+        "You can't clock in!",'You have submitted sick form today. Your next clock in will be start tomorrow at 07.00 AM',
+        [
+          { text: "OK", onPress: () => console.log('OK'), style: "cancel"},
+        ],
+        { cancelable: false },
+      );
+      this.props.addLoad(false)
+      return true;
+    }
+    else if(location === null || location === ''){
+      Alert.alert(
+        'Location is nowhere','You must enable your location before clock in!',
+        [
+          { text: "OK", onPress: () => console.log('OK'), style: "cancel"},
+        ],
+        { cancelable: false },
+      );
+      this.props.addLoad(false)
+      return true; 
+    }
+    else if(this.state.headDivision !== '' && this.state.urlphoto !== '' && this.state.projectName !== ''
+    && this.state.client !== '' && this.state.clientCompany !== '' && this.props.clockin_status === false && hour < 12 && hour > 6){
+      const clockintime = new Date();
       axios({
         method: 'POST',
-        url: 'https://absensiapiendpoint.azurewebsites.net/api/WorkAtClient',
+        url: Url_Clockin,
         headers: {
-          accept: '*/*',
-          'Content-Type': 'application/json',
+          'accept': 'application/json',
+          'Authorization': 'Bearer ' + this.props.tokenJWT
         },
         data: {
-          username: this.props.nameUser,
-          name: this.props.namee,
-          checkIn: new Date(),
-          state: this.state.status,
-          location : this.props.userLocation,
-          message : this.state.message,
-          approval: "pending",
-          photo: this.state.urlphoto,
-          companyName: this.state.clientCompany,
-          clientName: this.state.client,
-          projectName: this.state.projectName,
-          headDivision: this.state.scrumMaster
+          Username: this.state.username,
+          Name: this.state.fullname,
+          CheckIn: clockintime,
+          State: this.state.status,
+          Location : this.state.Location,
+          Approval : 'Pending',
+          ApprovalByAdmin : 'Pending',
+          Photo: this.state.urlphoto,
+          CompanyName: this.state.clientCompany,
+          ClientName: this.state.client,
+          ProjectName: this.state.projectName,
+          HeadDivision: this.state.headDivision
         }
       }).then((response) => {
-        console.log(response)
+        console.log('Success: Clock in at client office')
         this.setState({
-          statusCheckIn: 'You have clocked in!',
-          clockInstatus: false,
-          idUser: response.data.idWAC,
+          statusCheckIn: ' ',
+          clockInstatus: true,
+          idUser: response.data.Id,
         });
         deviceStorage.saveItem("clockin_state", "clockin");
+        deviceStorage.saveItem("state", '1');
+        deviceStorage.saveItem("clockinHour", new Date().getHours().toString());
+        deviceStorage.saveItem("clockinMinute", new Date().getMinutes().toString());
         deviceStorage.saveItem("id_user", JSON.stringify(this.state.idUser));
+
         this.props.addClockin(this.state.clockInstatus, this.state.statusCheckInn, this.state.idUser, this.state.status)
         this.props.addLoad(true)
         ToastAndroid.showWithGravity(
-          'Clock in success',
+          'Clock in success!',
           ToastAndroid.SHORT,
           ToastAndroid.BOTTOM,
         );
-        this.props.navigation.dispatch(
-          CommonActions.reset({
-            index: 1,
-            routes: [
-              { name: 'Home' },
-            ],
-          })
-        )
+        if(this.state.permission === 1){
+          this.props.navigation.dispatch(
+            CommonActions.reset({
+              index: 1,
+              routes: [
+                { name: 'HomeHD' },
+              ],
+            })
+          )
+        }
+        else if(this.state.permission === 2){
+          this.props.navigation.dispatch(
+            CommonActions.reset({
+              index: 1,
+              routes: [
+                { name: 'Home' },
+              ],
+            })
+          )
+        }
       })
       .catch((errorr) => {
-        alert(errorr)
+        console.log('Error: Clock in at client office')
+        ToastAndroid.showWithGravity(
+          'Clock in fail!',
+          ToastAndroid.SHORT,
+          ToastAndroid.BOTTOM,
+        );
     });
-    }       
+    }
+   }        
   }
 
     handleChangeMessage = event => {
@@ -221,192 +319,149 @@ class WorkClient extends Component {
   render() {
     const { photo } = this.state
     return (
-      <View style={styles.container2}>
-          <View style={styles.card}>
-                  <View style={styles.Split}>
-                     <View style={styles.split1}>
-                       <Text style={styles.titleText}>Take picture as evidence</Text>
-                       <Text style={styles.baseText}>* The picture should have your face in it</Text>
-                       <Text style={styles.baseText}>* This data will be forwarded to your Scrum Master to be approved first</Text>
-                       <View style={{flexDirection:'row'}}>
-                        <View style={styles.viewIcon}>
-                          <FontAwesome5 name='map-marker' size={30} color='#3366FF'/>       
-                        </View>
-                        <View style={styles.viewLocation}>
-                          <Text style={styles.locText}>{this.state.Location}</Text>       
-                        </View>
-                      </View>  
-                                 
-                     </View>
-                   <View style={styles.split2}>
-                   <FontAwesome5 name='camera' size={40} color='#FFFFFF' style={{display: this.state.loadingPhoto === false ? 'flex' : 'none', marginBottom:'25%'}}/>       
-                      {photo && (
-                        <React.Fragment>
+      <SafeAreaView style={{flex:1, backgroundColor:'#F9FCFF'}}>
+            <ScrollView
+                alwaysBounceVertical={true} 
+                refreshControl={
+                  <RefreshControl refreshing={this.state.refreshing} 
+                onRefresh={this.findCoordinates} />
+              }>
+              <View style={styles.card}>
+                <Text style={styles.textTake}>Take Picture as Evidence</Text>
+                <View style={styles.viewImage}>
+                  <View style={{display: this.state.loadingPhoto === false ? 'flex' : 'none'}}>
+                    <Camera width={50} height={50}/>
+                  </View>
+                  {photo && (
+                      <React.Fragment>
                         <Image
                             source={{ uri: photo.uri }}
                             style={styles.image}
                             />  
                         </React.Fragment>
-                      )}
-                      <View style={{marginBottom:'25%', display: this.state.loadingPhoto === true ? 'flex' : 'none'}}>
-                          <ActivityIndicator color='white' size={'large'} animating={this.state.loadingPhoto}/>   
-                      </View>          
-                      <TouchableOpacity onPress={this.handleChoosePhoto} style={styles.buttonPhoto}>
-                          <Text style={styles.textPhoto} >Take Picture</Text>
-                      </TouchableOpacity>
-                   </View>                 
-                   </View>
-          </View>
+                  )}       
+                </View>
+                <Text style={styles.textbelowPIC}>The picture should capture your face in it. The data from this form will be sent to your head division for their approval</Text>
+                <TouchableOpacity onPress={this.handleChoosePhoto} style={styles.buttonPhoto}>
+                    <Text style={styles.textPhoto}>Take Picture</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={{flex:1, marginTop:15, paddingBottom:30}}>
+                <Text style={styles.titleText}>Please Fill This Form</Text>
                 <Text style={styles.textSM}>
-                    Select Your Scrum Master *
+                    Select Your Head Division *
                 </Text>
 
-                <View style={styles.viewPicker}>            
-                  <Picker
+                 <View style={styles.viewPicker}>            
+                   <Picker
                     mode={"dropdown"}
-                    selectedValue={this.state.scrumMaster}
+                    selectedValue={this.state.headDivision}
                     style={styles.picker}
                     onValueChange={(itemValue, itemIndex) =>
-                      this.setState({scrumMaster: itemValue})
+                      this.setState({headDivision: itemValue})
                     }>
-                    <Picker.Item label="" value="" />
-                    <Picker.Item label="Java" value="java" />
-                    <Picker.Item label="JavaScript" value="js" />
+                    <Picker.Item label='' value=''/>
+                    {this.state.listHD.map((u,i) => {
+                      return (<Picker.Item key={i} label={u.profile.firstname+' '+u.profile.lastname} value={u.username}/>);
+                      })
+                    }
                   </Picker>
                 </View>
 
-            <Text
-              style={styles.textSM}>
-                Client's Name *
-            </Text>
-            <TextInput
-              style={styles.inputText}
-              onChangeText={text => this.setState({client: text})}
-              value={this.state.client}>
-            </TextInput>
-            <Text
-              style={styles.textSM}>
-                Client's Company/Organizations *
-            </Text>
-            <TextInput 
-            style={styles.inputText}
-            onChangeText={text => this.setState({clientCompany: text})}
-            value={this.state.clientCompany}></TextInput>
+              <Text
+                style={styles.textSM}>
+                  Client's Name *
+              </Text>
+              <TextInput
+                style={styles.inputText}
+                maxLength={40}
+                onChangeText={text => this.setState({client: text})}
+                value={this.state.client}>
+              </TextInput>
+                <Text
+                  style={styles.textSM}>
+                    Client's Company/Organizations *
+                </Text>
+                <TextInput 
+                style={styles.inputText}
+                maxLength={40}
+                onChangeText={text => this.setState({clientCompany: text})}
+                value={this.state.clientCompany}></TextInput>
 
-            <Text
-              style={styles.textSM}>
-              Project Name *
-            </Text>
-            <TextInput
-              style={styles.inputText}
-              onChangeText={text => this.setState({projectName: text})}
-              value={this.state.projectName}>
-            </TextInput>
+                <Text
+                  style={styles.textSM}>
+                  Project Name *
+                </Text>
+                <TextInput
+                  style={styles.inputText}
+                  maxLength={40}
+                  onChangeText={text => this.setState({projectName: text})}
+                  value={this.state.projectName}>
+                </TextInput>
 
-            <TouchableOpacity onPress={this.submitAll} style={styles.buttonSubmit}>
-                <Text style={styles.textbtnSubmit} >CLOCK IN</Text>
-            </TouchableOpacity>
-      </View>
+              <TouchableOpacity onPress={this.submitAll} style={styles.buttonSubmit}>
+                  <Text style={styles.textbtnSubmit} >Clock In</Text>
+              </TouchableOpacity>
+              </View>  
+            </ScrollView>
+          </SafeAreaView>
     )
   }
 }
 
 const styles = StyleSheet.create({
-Split:{
- flex: 1,
- flexDirection: 'row',
-},
-titleText: {
-fontSize: 16,
-fontWeight: 'bold',
-},
-baseText: {
-fontSize: 13,
-},
-locText:{
-fontSize: 20,
-textAlign:'center'
-},
-card: {
-  height: '26%', backgroundColor:'#FFFFFF', width:'100%'
-},
-container2:{
-  flex: 1,
-  backgroundColor:'#e5e5e5',
-},
-split1: {
-  flex:3, paddingTop:15, paddingLeft:10
-},
-viewIcon: {
-  alignItems:'flex-start', alignSelf:'flex-start', paddingTop:15,
-},
-viewLocation: {
-  paddingTop:15, paddingLeft:15
-},
-boldText: {
-  fontSize: 30,
-  color: 'red',
-},
- Split:{
-   flex: 1,
-   flexDirection: 'row',
- },
- titleText: {
-  fontSize: 16,
-  fontWeight: 'bold',
-},
-baseText: {
-  fontSize: 13,
-},
-locText:{
-  fontSize: 15,
-  textAlign:'left'
-},
-split2:{
-  alignItems:'center', flex:2, backgroundColor:'#7C7C7C', justifyContent: 'flex-end'
-},
+  card: {
+		backgroundColor:'white', flex:1, alignSelf:'center', marginTop:'5%', width:'90%', paddingBottom:10
+  },
+  textTake:{
+    textAlign:'center', paddingTop:'5%', fontFamily:'Nunito-SemiBold', fontWeight:'600', fontSize:20, color:'#505050'
+  },
+  viewImage: {
+    backgroundColor:'#d4d4d4', width:100, height:100, alignSelf:'center', marginTop:'10%', borderRadius:100/2, justifyContent:'center', alignItems:'center', paddingBottom:'2%', 
+  },
+  textbelowPIC: {
+    textAlign:'center', paddingTop:'7%', marginLeft:'5%', marginRight:'5%', fontFamily:'Nunito-Light', fontWeight:'300', color:'#676767' 
+  },
+   titleText: {
+    fontSize:18, marginLeft:21, fontWeight:'600', fontFamily:'Nunito-SemiBold', color:'#505050'
+  },
+  buttonPhoto:{
+    borderWidth:1, borderRadius:5, borderColor:'#1A446D', width:'90%', height:50, alignSelf:'center',justifyContent:'center', marginTop:'5%'
+  },
+  textPhoto:{
+    textAlign:'center', color:'#1A446D', fontSize:18, fontFamily:'Nunito-SemiBold', fontWeight:'600', marginBottom:7
+  },
 image:{
-  width: "100%", height: "85%"
-},
-buttonPhoto:{
-  backgroundColor:'#E74C3C',alignItems:'center', width:'100%', height:'20%'
-},
-textPhoto:{
-  color:'white', fontSize: 17, fontWeight:'bold', textAlign:'center',textAlignVertical: "center"
+  width: 150, height: 150, borderRadius:150/2
 },
 textSM:{
   marginTop: 16,
   paddingLeft:20,
-  fontSize:16
+  fontSize:16,
+  fontWeight:'300', fontFamily:'Nunito-Light'
 },
 viewPicker:{
-  width:'80%', height:'6%', marginLeft:20, borderRadius:10, borderColor:'black', borderWidth:1, backgroundColor:'white'
+  width:'90%', height:'10%', marginLeft:20, borderRadius:5, borderColor:'#505050', borderWidth:1, backgroundColor:'white'
 },
 picker:{
-  height: '100%', width: '100%', borderWidth:20, borderColor:'black'
+  height: '100%', width: '100%', borderWidth:20, borderColor:'#505050'
 },
 inputText:{
-  textAlignVertical: 'top', borderWidth: 1, borderRadius:10, width:'80%', height:'6%', marginLeft:20, backgroundColor:'white', fontSize:20 
+  textAlignVertical: 'top', borderWidth: 1, borderRadius:5, width:'90%', height:'10%', marginLeft:20, backgroundColor:'white', fontSize:18, borderColor:'#505050', fontFamily:'Nunito-Regular', fontWeight:'600' 
 },
 buttonSubmit:{
-  backgroundColor:'#1A446D', marginTop:30, alignItems:'center', width:'50%', height:'12%', alignSelf:'center', borderRadius:20
+  backgroundColor:'#26BF64', marginTop:30, alignItems:'center', width:'90%', height:'10%', alignSelf:'center', borderRadius:5
 },
 textbtnSubmit:{
-  color:'white', fontSize: 29, fontWeight:'bold', textAlign:'center',textAlignVertical: "center", flex:1 
+  color:'white', fontSize: 20, fontWeight:'600', textAlign:'center',textAlignVertical: "center", flex:1, fontFamily:'Nunito-SemiBold' 
 }
 });
 
 const mapStateToPropsData = (state) => {
-  console.log(state);
   return {
     tokenJWT: state.JwtReducer.jwt,
-    nameUser: state.DataReducer.username,
-    namee: state.DataReducer.fullname,
-    userLocation: state.DataReducer.locations,
     clockin_status : state.DataReducer.clockIn,
-    status_Checkin : state.DataReducer.statusCheckIn,
-    id : state.DataReducer.id,
-    workStatus :  state.DataReducer.workStatus
+    announcement :  state.DataReducer.announcement
   }
 }
 const mapDispatchToPropsData = (dispatch) => {

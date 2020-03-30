@@ -1,66 +1,89 @@
 import React, { Component } from 'react'
-import { View, StyleSheet, SafeAreaView, FlatList, ScrollView} from 'react-native'
+import { StyleSheet, SafeAreaView, FlatList, BackHandler, RefreshControl, View, Text } from 'react-native'
 import axios from 'axios';
 import moment from 'moment';
+import { connect } from 'react-redux';
+import Loading from '../components/Loading';
 import PeopleCard from '../components/CardApproval'
+import FontAwesome5 from 'react-native-vector-icons/FontAwesome5';
+import {Url_GetDataApproval} from '../config/URL'
 
-export default class ApprovalPage extends Component {
+class ApprovalPage extends Component {
     constructor(props) {
         super(props);
         this.state = {
-          people: [],
           monthYear : moment().format('Do MMM YYYY'),
+          loadings : true,
+          refreshing: false,
+          people:[],
+          backPressed: 0,
         }
         this.loadData = this.loadData.bind(this);
+        this.onBack = this.onBack.bind(this);
     }
-    componentDidMount(){
-      this.loadData();
+    async componentDidMount(){
+      BackHandler.addEventListener('hardwareBackPress', this.onBack);
+      this.loadData();  
     }
-    loadData = async () => {     
+
+    componentWillUnmount() {
+      BackHandler.removeEventListener('hardwareBackPress', this.onBack);
+    }
+
+    onBack = () => {
+      this.setState({
+        backPressed : this.state.backPressed + 1
+      })
+  
+      if(this.state.backPressed % 2 === 1){
+        this.props.navigation.goBack();
+        return true;
+      }
+    };
+
+    loadData = async () => {   
       const headers = {
-       accept: '*/*',
+        'accept': 'application/json',
+        'Authorization': 'Bearer ' + this.props.tokenJWT 
       };
 
       axios({
           method: 'GET',
-          url: 'https://absensiapiendpoint.azurewebsites.net/api/WorkFromHome?Approval=aa',
+          url: Url_GetDataApproval + this.props.nameUser,
           headers: headers,
         }).then((response) => { 
-          console.log(response)    
+          console.log('Success: Get approval data')   
           this.setState({
-            people: response.data
+            people: response.data,
+            loadings: false
           });
-          //alert(this.state.people)
         }).catch((errorr) => {
-          //alert(errorr)       
+          console.log('Error: Get approval data')       
             this.setState({
-              error: 'Error retrieving data',
+              loadings: false
             });
         });
     };
 
     render() {
-        let peopleCards = this.state.people.map(person => {
-            return (
-                <PeopleCard key={person.idWFH} person={person} date={this.state.monthYear}/>
-            )
-        })
         return (
-            // <View style={{height:'100%', backgroundColor:'#e5e5e5'}}>
-            //     {peopleCards}
-            // </View>
-            <SafeAreaView style={styles.container}>
-            
+            <SafeAreaView style={styles.container}>           
               <FlatList
-                keyExtractor={(item) => item.idWFH}
+                keyExtractor={(item, index) => index.toString()}
                 data={this.state.people}
-                renderItem={({ item }) => <PeopleCard person={item} date={this.state.monthYear}/>}
+                renderItem={({ item }) =>
+                    <PeopleCard person={item} date={this.state.monthYear} loadData={this.loadData}/>         
+                }
+                refreshControl={
+                <RefreshControl refreshing={this.state.refreshing} 
+                onRefresh={this.loadData}/>}
+                style={{display: this.state.people.length !== 0 ? 'flex':'none'}}
               />
-               
-              
-              {/* <ScrollView>
-                {peopleCards}
-              </ScrollView> */}
+              <View style={[styles.view,{display: this.state.people.length === 0 ? 'flex':'none'}]}>
+                <FontAwesome5 name='exclamation-triangle' size={80} color='#1A446D' style={{opacity:0.7}}/>
+                <Text style={styles.text}>No Approval Request</Text>
+              </View>
+              <Loading visible={this.state.loadings === true ? true : false}/>
             </SafeAreaView>
         )
     }
@@ -68,25 +91,26 @@ export default class ApprovalPage extends Component {
 
 const styles = StyleSheet.create({
   container:{
-       flex:1,
-       
+       flex:1,     
   },
-  viewContainer:{
-      flexDirection : 'row', height:'100%',
-  },
-  viewText:{
-      flex:3, justifyContent:'center', 
+  view:{
+    alignSelf:'center', marginBottom:350, alignItems:'center'
   },
   text:{
-      fontWeight: 'bold', fontSize:20, marginLeft:'6%'
-  },
-  text1:{
-      marginBottom: 10, fontWeight: 'bold', fontSize:16, marginLeft:'6%'
-  },
-  text2:{
-    fontSize: 16, fontWeight:'bold', color: 'grey', textAlignVertical:'top', textAlign:'right', marginTop:'10%',marginRight:'8%'
-  },
-  text3:{
-    fontSize: 16, color: 'grey', textAlignVertical:'bottom', textAlign:'right', justifyContent:'flex-end', marginTop:'45%',marginRight:'8%'
-  },
+    fontFamily:'Nunito-SemiBold', fontSize:20, fontWeight:'600', color:'#265685'
+  }
 })
+
+const mapStateToPropsData = (state) => {
+  return {
+    tokenJWT: state.JwtReducer.jwt,
+    nameUser: state.DataReducer.username,
+  }
+}
+const mapDispatchToPropsData = (dispatch) => {
+  return {
+
+  }
+}
+  
+export default connect(mapStateToPropsData, mapDispatchToPropsData)(ApprovalPage)
